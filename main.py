@@ -5,7 +5,7 @@ import statistics as stats
 def read_data():
     data = []
 
-    with open("data/TSLA_Prices.csv", "r") as file:
+    with open("data/SSNLF_Prices.csv", "r") as file:
         reader = csv.reader(file)
         next(reader)
         
@@ -61,9 +61,12 @@ def volatility(data, window_size):
         
     return vol
 
-def signal(short_ma, long_ma):
+def signal(short_ma, long_ma, volatility_values, min_vol = 1.0):
     if len(short_ma) == 0 or len(long_ma) == 0:
-        return "Not enouhgh data for signal"
+        return "Not enough data for signal"
+    
+    if volatility_values < min_vol:
+        return "Low Volatility - Signal Ignore"
     
     if short_ma[-1] > long_ma[-1]:
         return "BUY Signal"
@@ -72,13 +75,34 @@ def signal(short_ma, long_ma):
     else:
         return "HOLD"
     
+def buy_sell(short_ma, long_ma, short_w, long_w):
+    buy_points = []
+    sell_points = []
     
-def ploting(data, ma_short, ma_long):
+    start = max(short_w, long_w) - 1
+    
+    for i in range(start, len(short_ma)):
+        prev_short = short_ma[i - 1]
+        prev_long = long_ma[i - 1 - (long_w - short_w)]
+        
+        curr_short = short_ma[i]
+        curr_long = long_ma[i - (long_w - short_w)]
+        
+        if prev_short <= prev_long and curr_short > curr_long:
+            buy_points.append(i)
+        elif prev_short >= prev_long and curr_short < curr_long:
+            sell_points.append(i)
+            
+    return buy_points, sell_points
+    
+    
+def ploting(data, ma_short, ma_long, short_w, long_w, buy, sell):
     plt.figure(figsize = (12, 6))
     plt.plot(data, label = "Stock Prices", alpha = 0.6)
-    plt.plot(range(len(ma_short)), ma_short, label = "5-Day Moving Average")
-    plt.plot(range(len(ma_long)), ma_long, label = "10-Day Moving Average")
-
+    plt.plot(range(short_w - 1, len(data)), ma_short, label = f"{short_w}-Day Moving Average")
+    plt.plot(range(long_w - 1, len(data)), ma_long, label = f"{long_w}-Day Moving Average")
+    plt.scatter(buy, [data[i] for i in buy], marker = '^', color = 'g', label = 'BUY', s = 100)
+    plt.scatter(sell, [data[i] for i in sell], marker = 'v', color = 'r', label = 'SELL', s = 100)
     plt.xlabel("Days")
     plt.ylabel("Price")
     plt.title("Stock Trend Analysis")
@@ -86,16 +110,37 @@ def ploting(data, ma_short, ma_long):
     plt.grid(True)
     plt.show()
 
+def export_result(data, short_ma, long_ma, short_w, long_w, filename="trend_analysis.csv"):
+    with open(filename, "w", newline = '') as file:
+        writer = csv.writer(file)
+        writer.writerow(["Day", "Price", "Short_MA", "Long_MA"])
+        
+        for i in range(len(data)):
+            s = short_ma[i - (short_w - 1)] if i >= (short_w - 1) else ""
+            l = long_ma[i - (long_w - 1)] if i >= (long_w - 1) else ""
+            writer.writerow([i, data[i], s, l])
+
 if __name__ == "__main__":
     data = read_data()
-    average = moving_average(data, window_size=3)
-    short_ma = moving_average(data, window_size=3)
-    long_ma = moving_average(data, window_size=6)
-    signal_result = signal(short_ma, long_ma)
-    trend = detect_trend(average)
-    strength = trend_strength(average)
-    ploting(data, short_ma, long_ma)
+    average = moving_average(data, window_size=5)
+    short_window = 5
+    long_window = 10
+    short_ma = moving_average(data, short_window)
+    long_ma = moving_average(data, long_window)
+    
+    short_term_trend = detect_trend(short_ma)
+    volatility_values = volatility(data, window_size=5)
+    latest_volatility = volatility_values[-1] 
+
+    signal_result = signal(short_ma, long_ma, latest_volatility)
+    strength = trend_strength(short_ma)
+    buy, sell = buy_sell(short_ma, long_ma, short_window, long_window)
+    export_result(data, short_ma, long_ma, short_window, long_window)
+    
     print("5-Day Moving Averages:", average)
-    print("Current Trend:", trend)
+    print("Short-Term Trend:", short_term_trend)
     print("Trend Strength:", strength)
+    print("Latest Volatility Values:", round(latest_volatility, 2))
     print("Trading Signal:", signal_result)
+    print("Analysis exported to CSV file.")
+    ploting(data, short_ma, long_ma, short_window, long_window, buy, sell)
